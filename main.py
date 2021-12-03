@@ -1,10 +1,9 @@
-from typing_extensions import final
 from fastapi import FastAPI
 import uvicorn
 from database import create_table, insert_to_table, check_if_already_exist, read_from_table, update_table
+from converter import update_convert_table
 from pydantic import BaseModel
 import json
-from converter import update_convert_table
 
 app = FastAPI()
 
@@ -72,7 +71,7 @@ sql_create_customer_table = ''' CREATE TABLE IF NOT EXISTS Customer(
     cus_address TEXT NOT NULL,
     cus_phone TEXT NOT NULL,
     company_id INTEGER NOT NULL,
-    FOREIGN KEY (company_id) REFERENCES company(id) 
+    FOREIGN KEY (company_id) REFERENCES company(id)
     ) '''
 
 sql_create_subscription_table = ''' CREATE TABLE IF NOT EXISTS Subscription(
@@ -80,7 +79,7 @@ sql_create_subscription_table = ''' CREATE TABLE IF NOT EXISTS Subscription(
     sub_price FLOAT NOT NULL,
     sub_currency TEXT NOT NULL,
     company_id INTEGER NOT NULL,
-    FOREIGN KEY (company_id) REFERENCES company(id) 
+    FOREIGN KEY (company_id) REFERENCES company(id)
     ) '''
 
 sql_create_quote_table = ''' CREATE TABLE IF NOT EXISTS Quote(
@@ -92,14 +91,14 @@ sql_create_quote_table = ''' CREATE TABLE IF NOT EXISTS Quote(
     customer_id INTEGER NOT NULL,
     subscription_id INTEGER NOT NULL,
     FOREIGN KEY (customer_id) REFERENCES customer(id),
-    FOREIGN KEY (subscription_id) REFERENCES subscription(id)  
+    FOREIGN KEY (subscription_id) REFERENCES subscription(id)
     ) '''
 
 sql_create_invoice_table = ''' CREATE TABLE IF NOT EXISTS Invoice(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     inv_pending BOOL NOT NULL,
     quote_id INTEGER NOT NULL,
-    FOREIGN KEY (quote_id) REFERENCES quote(id)  
+    FOREIGN KEY (quote_id) REFERENCES quote(id)
     ) '''
 
 # Functions
@@ -270,7 +269,8 @@ def create_quote(quote: Quote):
 def accept_quote(acceptQuote: AcceptQuote):
     acceptQuote = dict(acceptQuote)
     if (acceptQuote["accept"]):
-        update_table("Quote", list(str(acceptQuote["quote_id"])))
+        update_table("Quote", " SET quote_active = TRUE", " WHERE id = ?",
+                     list(str(acceptQuote["quote_id"])))
         # create invoice
         create_table(sql_create_invoice_table)
         model_str = generate_model_to_string(Invoice)
@@ -287,14 +287,14 @@ def accept_quote(acceptQuote: AcceptQuote):
 def check_payment(quote_id: int):
     result = read_from_table(
         "Invoice", "*", "WHERE quote_id = " + str(quote_id))
-    if (len(result) == 1):
+    if (len(result) > 1):
         result = list(result)
         if (result[1] == 1):
             result[1] = True
         else:
             result[1] = False
         return {"id": result[0], "inv_pending": result[1], "quote_id": result[2]}
-    return {"message": "No invoice found with the quote id : " + quote_id}
+    return {"message": "No invoice found with the quote id : " + str(quote_id)}
 
 
 @app.post("/pay-invoice")
@@ -303,12 +303,14 @@ def pay_invoice(payInvoice: PayInvoice):
     # check credit card
     if (check_credit_card(payInvoice["credit_card"])):
         # check if quote id exist
-        return(True)
-
-    # result = read_from_table(
-    #     "Invoice", "*", "WHERE quote_id = " + str(quote_id))
-
-    return {"message": "Payment refused"}
+        result = read_from_table(
+            "Invoice", "*", "WHERE quote_id = " + str(payInvoice["quote_id"]))
+        if (len(result) > 1):
+            update_table("Invoice", " SET inv_pending = FALSE",
+                         " WHERE quote_id = ?", list(str(payInvoice["quote_id"])))
+            return{"message": "Payment accepted"}
+        return {"message": "Payment refused invoice doesn't exist."}
+    return {"message": "Payment refused wrong credit card : " + str(payInvoice["credit_card"])}
 
 
 if __name__ == '__main__':

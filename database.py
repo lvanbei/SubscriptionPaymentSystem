@@ -96,13 +96,12 @@ def read_from_table(table, row, where):
     return(False)
 
 
-def update_table(table, id):
-    print(id)
+def update_table(table, set, where, data):
     sql = "UPDATE " + table
-    sql += " SET quote_active = TRUE"
-    sql += " WHERE id = ?"
+    sql += set
+    sql += where
     conn = create_connection_to_db()
     cur = conn.cursor()
-    cur.execute(sql, id)
+    cur.execute(sql, data)
     conn.commit()
     return(True)
