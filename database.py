@@ -44,7 +44,7 @@ def create_table(create_table_sql):
         print(e)
 
 
-def insert_to_table_company(table, model, data):
+def insert_to_table(table, model, data):
     """
     Create a new task
     :param table: table
