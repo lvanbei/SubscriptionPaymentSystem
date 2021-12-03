@@ -2,7 +2,7 @@ from pydantic.utils import _EMPTY
 import requests
 import json
 import time
-from database import create_table, create_connection_to_db
+from database import create_table, create_connection_to_db, read_from_table
 
 sql_converter_table = "CREATE TABLE IF NOT EXISTS conversion (id INTEGER PRIMARY KEY AUTOINCREMENT, base_code TEXT NOT NULL, conversion_rates json, documentation TEXT NOT NULL, result TEXT NOT NULL, terms_of_use TEXT NOT NULL, time_last_update_unix INT NOT NULL, time_last_update_utc DATE NOT NULL, time_next_update_unix INT NOT NULL, time_next_update_utc DATE NOT NULL)"
 table = "conversion"
@@ -16,12 +16,10 @@ def delete_table():
 
 
 def check_time():
-    sql = "SELECT time_next_update_unix FROM " + table
-    conn = create_connection_to_db()
-    cur = conn.cursor()
-    cur.execute(sql)
-    data = cur.fetchall()
-    if (data[0][0] <= time.time()):
+    data = read_from_table(table, "time_next_update_unix", False)
+    if (data == False):
+        return(True)
+    if (data[0] <= time.time()):
         return(True)
     return(False)
 
@@ -47,6 +45,3 @@ def update_convert_table():
         conn.commit()
         return True
     return False
-
-
-update_convert_table()
