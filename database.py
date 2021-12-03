@@ -81,3 +81,28 @@ def check_if_already_exist(table, model, data):
     if (len(data) > 0):
         return (False)
     return(True)
+
+
+def read_from_table(table, row, where):
+    sql = "SELECT " + row + " FROM " + table
+    if (where):
+        sql += " " + where
+    conn = create_connection_to_db()
+    cur = conn.cursor()
+    cur.execute(sql)
+    data = cur.fetchall()
+    if (len(data) > 0):
+        return(data[0])
+    return(False)
+
+
+def update_table(table, id):
+    print(id)
+    sql = "UPDATE " + table
+    sql += " SET quote_active = TRUE"
+    sql += " WHERE id = ?"
+    conn = create_connection_to_db()
+    cur = conn.cursor()
+    cur.execute(sql, id)
+    conn.commit()
+    return(True)
