@@ -152,6 +152,8 @@ def calc_conversion(price, currency):
 def check_credit_card(cardNumbers):
     # convert to string
     cardNumbers = str(cardNumbers)
+    if (len(cardNumbers) != 16):
+        return(False)
     # save last digit to checking digit
     checkingDigit = int(cardNumbers[:1])
     # remove last digit
@@ -169,6 +171,7 @@ def check_credit_card(cardNumbers):
                 cardNumbers[index] = num
     # sum the list + add checking digit
     finalNumber = sum(cardNumbers) + checkingDigit
+    print(finalNumber)
     if (finalNumber % 10 == 0):
         return(True)
     return (False)
@@ -189,7 +192,7 @@ def create_company_account(company: Company):
         # convert model to right format for sql request
         model = generate_model_to_string(Company)
         data = generate_data_to_tuple(company)
-        # add data to db
+        # # add data to db
         insert_to_table(table, model, data)
         return {"message": "Company account created"}
     return {"result": "NOK"}
@@ -268,15 +271,20 @@ def create_quote(quote: Quote):
 @app.post("/accept-quote")
 def accept_quote(acceptQuote: AcceptQuote):
     acceptQuote = dict(acceptQuote)
-    if (acceptQuote["accept"]):
-        update_table("Quote", " SET quote_active = TRUE", " WHERE id = ?",
-                     list(str(acceptQuote["quote_id"])))
+    if (acceptQuote["accept"] == True):
+        updated = update_table("Quote", " SET quote_active = TRUE", " WHERE id = ?",
+                               list(str(acceptQuote["quote_id"])))
         # create invoice
-        create_table(sql_create_invoice_table)
-        model_str = generate_model_to_string(Invoice)
-        data = (True, acceptQuote["quote_id"])
-        insert_to_table("Invoice", model_str, data)
-
+        if (updated):
+            create_table(sql_create_invoice_table)
+            model_str = generate_model_to_string(Invoice)
+            model_lst = generate_model_to_list(Invoice)
+            data = (True, acceptQuote["quote_id"])
+            res = check_if_already_exist("Invoice", model_lst, data)
+            if (res):
+                insert_to_table("Invoice", model_str, data)
+            return {"message": "Payment " + str(acceptQuote["quote_id"]) + " has been updated to : " + str(acceptQuote["accept"])}
+        return {"message": "Quote id : " + str(acceptQuote["quote_id"]) + " doesn't exist"}
     else:
         return{"message": "Quote not accepted"}
 

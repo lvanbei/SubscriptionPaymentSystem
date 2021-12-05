@@ -93,7 +93,7 @@ def read_from_table(table, row, where):
     data = cur.fetchall()
     if (len(data) > 0):
         return(data[0])
-    return(False)
+    return([])
 
 
 def update_table(table, set, where, data):
@@ -104,4 +104,6 @@ def update_table(table, set, where, data):
     cur = conn.cursor()
     cur.execute(sql, data)
     conn.commit()
-    return(True)
+    if (cur.rowcount > 0):
+        return(True)
+    return(False)

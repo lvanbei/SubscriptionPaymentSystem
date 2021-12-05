@@ -16,15 +16,20 @@ def delete_table():
 
 
 def check_time():
+    # read next update time of the conversion data
     data = read_from_table(table, "time_next_update_unix", False)
+    # if no data exists -> update data
     if (data == False):
         return(True)
+    # if update time is lower than current time -> update data
     if (data[0] <= time.time()):
         return(True)
+    # don't update data
     return(False)
 
 
 def update_convert_table():
+    # check if conversion db is up to date
     if (check_time()):
         # create table if doesn't exist
         create_table(sql_converter_table)
