@@ -56,14 +56,14 @@ class PayInvoice(BaseModel):
 
 # Query
 
-sql_create_company_table = ''' CREATE TABLE IF NOT EXISTS Company(
+sql_create_company_table = ''' CREATE TABLE IF NOT EXISTS company(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     co_name TEXT NOT NULL,
     co_address TEXT NOT NULL,
     co_VAT INT NOT NULL,
     co_bankaccount TEXT NOT NULL) '''
 
-sql_create_customer_table = ''' CREATE TABLE IF NOT EXISTS Customer(
+sql_create_customer_table = ''' CREATE TABLE IF NOT EXISTS customer(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     cus_name TEXT NOT NULL,
     cus_email TEXT NOT NULL,
@@ -73,7 +73,7 @@ sql_create_customer_table = ''' CREATE TABLE IF NOT EXISTS Customer(
     FOREIGN KEY (company_id) REFERENCES company(id)
     ) '''
 
-sql_create_subscription_table = ''' CREATE TABLE IF NOT EXISTS Subscription(
+sql_create_subscription_table = ''' CREATE TABLE IF NOT EXISTS subscription(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sub_price FLOAT NOT NULL,
     sub_currency TEXT NOT NULL,
@@ -81,7 +81,7 @@ sql_create_subscription_table = ''' CREATE TABLE IF NOT EXISTS Subscription(
     FOREIGN KEY (company_id) REFERENCES company(id)
     ) '''
 
-sql_create_quote_table = ''' CREATE TABLE IF NOT EXISTS Quote(
+sql_create_quote_table = ''' CREATE TABLE IF NOT EXISTS quote(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     quote_quantity INT NOT NULL,
     quote_price FLOAT NOT NULL,
@@ -93,7 +93,7 @@ sql_create_quote_table = ''' CREATE TABLE IF NOT EXISTS Quote(
     FOREIGN KEY (subscription_id) REFERENCES subscription(id)
     ) '''
 
-sql_create_invoice_table = ''' CREATE TABLE IF NOT EXISTS Invoice(
+sql_create_invoice_table = ''' CREATE TABLE IF NOT EXISTS invoice(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     inv_pending BOOL NOT NULL,
     quote_id INTEGER NOT NULL,
@@ -107,8 +107,8 @@ def calc_vat(price):
     vat = price / 100 * 21
     newPrice = price + vat
     # convert to two decimals
-    newPrice = round(2, newPrice)
-    return(newPrice)
+    test = round(newPrice, 2)
+    return(test)
 
 
 def calc_conversion(price, currency):
@@ -120,7 +120,7 @@ def calc_conversion(price, currency):
     conversionRate = currentCurrencies["conversion_rates"][currency]
     finalResult = 1 / conversionRate * price
     # convert to two decimals
-    finalResult = round(2, finalResult)
+    finalResult = round(finalResult, 2)
     return(finalResult)
 
 
@@ -163,13 +163,11 @@ def create_company_account(company: Company):
     # create company
     values_dict = dict(company)
     conn = sqlite3.connect(databaseName)
-    cur = conn.cursor()
-    cur.execute(sql_create_company_table)
+    conn.execute(sql_create_company_table)
     sql = "INSERT INTO company(CO_NAME,CO_ADDRESS,CO_VAT,CO_BANKACCOUNT) VALUES(?,?,?,?)"
     data = [values_dict["CO_NAME"], values_dict["CO_ADDRESS"],
             values_dict["CO_VAT"], values_dict["CO_BANKACCOUNT"]]
-    cur.execute(sql, data)
-    conn.commit()
+    conn.execute(sql, data)
     conn.close()
     return {"message": "Company account created"}
 
@@ -179,13 +177,11 @@ def create_customer_account(customer: Customer):
     # create customer
     values_dict = dict(customer)
     conn = sqlite3.connect(databaseName)
-    cur = conn.cursor()
-    cur.execute(sql_create_customer_table)
+    conn.execute(sql_create_customer_table)
     sql = "INSERT INTO customer (CUS_NAME,CUS_EMAIL,CUS_ADDRESS,CUS_PHONE,COMPANY_ID) VALUES(?,?,?,?,?)"
     data = [values_dict["CUS_NAME"], values_dict["CUS_EMAIL"],
             values_dict["CUS_ADDRESS"], values_dict["CUS_PHONE"], values_dict["COMPANY_ID"]]
-    cur.execute(sql, data)
-    conn.commit()
+    conn.execute(sql, data)
     conn.close()
     return {"message": "Customer account created"}
 
@@ -195,13 +191,11 @@ def create_subscription(subscription: Subscription):
     # create subscription
     values_dict = dict(subscription)
     conn = sqlite3.connect(databaseName)
-    cur = conn.cursor()
-    cur.execute(sql_create_subscription_table)
+    conn.execute(sql_create_subscription_table)
     sql = "INSERT INTO subscription (SUB_PRICE,SUB_CURRENCY,COMPANY_ID) VALUES(?,?,?)"
     data = [values_dict["SUB_PRICE"], values_dict["SUB_CURRENCY"],
             values_dict["COMPANY_ID"]]
-    cur.execute(sql, data)
-    conn.commit()
+    conn.execute(sql, data)
     conn.close()
     return {"message": "Subscription created"}
 
@@ -211,43 +205,43 @@ def create_quote(quote: Quote):
     # add new quote
     values_dict = dict(quote)
     conn = sqlite3.connect(databaseName)
-    cur = conn.cursor()
-    cur.execute(sql_create_quote_table)
+    conn.execute(sql_create_quote_table)
     sql = "INSERT INTO quote (QUOTE_QUANTITY,QUOTE_PRICE,QUOTE_CURRENCY,QUOTE_ACTIVE,CUSTOMER_ID,SUBSCRIPTION_ID) VALUES(?,?,?,?,?,?)"
     data = [values_dict["QUOTE_QUANTITY"], values_dict["QUOTE_PRICE"], values_dict["QUOTE_CURRENCY"],
             values_dict["QUOTE_ACTIVE"], values_dict["CUSTOMER_ID"], values_dict["SUBSCRIPTION_ID"]]
-    cur.execute(sql, data)
-    conn.commit()
+    query_result = conn.execute(sql, data)
+    quote_id = int(query_result.lastrowid)
     conn.close()
-    quote_id = cur.lastrowid
     # return quote id + price in EUR + price with VAT
     values_dict["QUOTE_ID"] = quote_id
     if (values_dict["QUOTE_CURRENCY"] != "EUR"):
         values_dict["QUOTE_PRICE_EUR"] = calc_conversion(
             values_dict["QUOTE_PRICE"], values_dict["QUOTE_CURRENCY"])
+        values_dict["QUOTE_PRICE_VAT_INCL"] = calc_vat(
+            values_dict["QUOTE_PRICE_EUR"])
+    elif (values_dict["QUOTE_CURRENCY"] == "EUR"):
+        values_dict["QUOTE_PRICE_VAT_INCL"] = calc_vat(
+            values_dict["QUOTE_PRICE"])
 
-    values_dict["QUOTE_PRICE_VAT_INCL"] = calc_vat(
-        values_dict["QUOTE_PRICE_EUR"])
     return (values_dict)
 
 
 @app.post("/accept-quote")
 def accept_quote(acceptQuote: AcceptQuote):
     values_dict = dict(acceptQuote)
+    print(values_dict)
     if (values_dict["ACCEPT"] == True):
         # update quote
-        conn = sqlite3.connect(databaseName)
-        cur = conn.cursor()
-        sql = "UPDATE Quote SET quote_active = ? WHERE id = ?"
+        conn = sqlite3.connect(
+            databaseName, isolation_level=None, check_same_thread=False)
+        sql = "UPDATE quote SET quote_active = ? WHERE id = ?"
         data = [values_dict["ACCEPT"], values_dict["QUOTE_ID"]]
-        cur.execute(sql, data)
-        conn.commit()
+        conn.execute(sql, data)
         # create invoice
-        cur.execute(sql_create_invoice_table)
-        sql = "INSERT INTO Invoice (INV_PENDING,QUOTE_ID) VALUES(?,?)"
+        conn.execute(sql_create_invoice_table)
+        sql = "INSERT INTO invoice (INV_PENDING,QUOTE_ID) VALUES(?,?)"
         data = [True, values_dict["QUOTE_ID"]]
-        cur.execute(sql, data)
-        conn.commit()
+        conn.execute(sql, data)
         conn.close()
         return {"message": "Payment " + str(values_dict["QUOTE_ID"]) + " has been updated to : True"}
     else:
@@ -258,11 +252,10 @@ def accept_quote(acceptQuote: AcceptQuote):
 def check_payment(quote_id: int):
     values_dict = dict({"QUOTE_ID": quote_id})
     conn = sqlite3.connect(databaseName)
-    cur = conn.cursor()
-    sql = "SELECT * FROM Invoice WHERE QUOTE_ID = ?"
+    sql = "SELECT * FROM invoice WHERE QUOTE_ID = ?"
     data = [values_dict["QUOTE_ID"]]
-    cur.execute(sql, data)
-    result = cur.fetchall()
+    sql_result = conn.execute(sql, data)
+    result = sql_result.fetchall()
     conn.close()
     if (len(result) == 1):
         result_dict = list(result[0])
@@ -280,10 +273,9 @@ def pay_invoice(payInvoice: PayInvoice):
     # check credit card
     if (check_credit_card(values_dict["CREDIT_CARD"]) == True):
         conn = sqlite3.connect(databaseName)
-        cur = conn.cursor()
-        sql = "UPDATE Invoice SET INV_PENDING = FALSE WHERE id = ?"
+        sql = "UPDATE invoice SET INV_PENDING = FALSE WHERE id = ?"
         data = [values_dict["QUOTE_ID"]]
-        cur.execute(sql, data)
+        conn.execute(sql, data)
         conn.close()
         return{"message": "Payment accepted"}
     else:
