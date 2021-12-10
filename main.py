@@ -106,6 +106,8 @@ sql_create_invoice_table = ''' CREATE TABLE IF NOT EXISTS Invoice(
 def calc_vat(price):
     vat = price / 100 * 21
     newPrice = price + vat
+    # convert to two decimals
+    newPrice = round(2, newPrice)
     return(newPrice)
 
 
@@ -117,6 +119,8 @@ def calc_conversion(price, currency):
     currentCurrencies = response.json()
     conversionRate = currentCurrencies["conversion_rates"][currency]
     finalResult = 1 / conversionRate * price
+    # convert to two decimals
+    finalResult = round(2, finalResult)
     return(finalResult)
 
 
@@ -153,11 +157,10 @@ def check_credit_card(cardNumbers):
 def root():
     return {"message": "It works !"}
 
-# https://fastapi.tiangolo.com/tutorial/body/
-
 
 @app.post("/create-company-account")
 def create_company_account(company: Company):
+    # create company
     values_dict = dict(company)
     conn = sqlite3.connect(databaseName)
     cur = conn.cursor()
@@ -173,7 +176,7 @@ def create_company_account(company: Company):
 
 @app.post("/create-customer-account")
 def create_customer_account(customer: Customer):
-    # create table, if already exist skip
+    # create customer
     values_dict = dict(customer)
     conn = sqlite3.connect(databaseName)
     cur = conn.cursor()
@@ -189,6 +192,7 @@ def create_customer_account(customer: Customer):
 
 @app.post("/create-subscripton")
 def create_subscription(subscription: Subscription):
+    # create subscription
     values_dict = dict(subscription)
     conn = sqlite3.connect(databaseName)
     cur = conn.cursor()
@@ -204,6 +208,7 @@ def create_subscription(subscription: Subscription):
 
 @app.post("/create-quote")
 def create_quote(quote: Quote):
+    # add new quote
     values_dict = dict(quote)
     conn = sqlite3.connect(databaseName)
     cur = conn.cursor()
@@ -215,14 +220,14 @@ def create_quote(quote: Quote):
     conn.commit()
     conn.close()
     quote_id = cur.lastrowid
+    # return quote id + price in EUR + price with VAT
     values_dict["QUOTE_ID"] = quote_id
-    values_dict["QUOTE_PRICE_EUR"] = calc_conversion(
-        values_dict["QUOTE_PRICE"], values_dict["QUOTE_CURRENCY"])
+    if (values_dict["QUOTE_CURRENCY"] != "EUR"):
+        values_dict["QUOTE_PRICE_EUR"] = calc_conversion(
+            values_dict["QUOTE_PRICE"], values_dict["QUOTE_CURRENCY"])
+
     values_dict["QUOTE_PRICE_VAT_INCL"] = calc_vat(
         values_dict["QUOTE_PRICE_EUR"])
-
-    conn.close()
-    ##jsonStr = json.dumps(quote)
     return (values_dict)
 
 
@@ -230,10 +235,12 @@ def create_quote(quote: Quote):
 def accept_quote(acceptQuote: AcceptQuote):
     values_dict = dict(acceptQuote)
     if (values_dict["ACCEPT"] == True):
+        # update quote
         conn = sqlite3.connect(databaseName)
         cur = conn.cursor()
-        cur.execute("UPDATE Quote SET quote_active = ? WHERE id = ?",
-                    [values_dict["ACCEPT"], values_dict["QUOTE_ID"]])
+        sql = "UPDATE Quote SET quote_active = ? WHERE id = ?"
+        data = [values_dict["ACCEPT"], values_dict["QUOTE_ID"]]
+        cur.execute(sql, data)
         conn.commit()
         # create invoice
         cur.execute(sql_create_invoice_table)
@@ -252,8 +259,9 @@ def check_payment(quote_id: int):
     values_dict = dict({"QUOTE_ID": quote_id})
     conn = sqlite3.connect(databaseName)
     cur = conn.cursor()
-    cur.execute("SELECT * FROM Invoice WHERE QUOTE_ID = ?",
-                [values_dict["QUOTE_ID"]])
+    sql = "SELECT * FROM Invoice WHERE QUOTE_ID = ?"
+    data = [values_dict["QUOTE_ID"]]
+    cur.execute(sql, data)
     result = cur.fetchall()
     conn.close()
     if (len(result) == 1):
@@ -273,8 +281,9 @@ def pay_invoice(payInvoice: PayInvoice):
     if (check_credit_card(values_dict["CREDIT_CARD"]) == True):
         conn = sqlite3.connect(databaseName)
         cur = conn.cursor()
-        cur.execute(
-            "UPDATE Invoice SET INV_PENDING = FALSE WHERE id = ?", [values_dict["QUOTE_ID"]])
+        sql = "UPDATE Invoice SET INV_PENDING = FALSE WHERE id = ?"
+        data = [values_dict["QUOTE_ID"]]
+        cur.execute(sql, data)
         conn.close()
         return{"message": "Payment accepted"}
     else:
