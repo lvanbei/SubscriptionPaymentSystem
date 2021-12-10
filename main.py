@@ -1,58 +1,57 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 import uvicorn
-from database import create_table, insert_to_table, check_if_already_exist, read_from_table, update_table
-from converter import update_convert_table
 from pydantic import BaseModel
 import json
-
+import sqlite3
+import requests
 app = FastAPI()
+databaseName = 'SaaS.db'
 
 
 # Models
-
 class Company(BaseModel):
-    co_name: str
-    co_address: str
-    co_VAT: int
-    co_bankaccount: str
+    CO_NAME: str
+    CO_ADDRESS: str
+    CO_VAT: int
+    CO_BANKACCOUNT: str
 
 
 class Customer(BaseModel):
-    cus_name: str
-    cus_email: str
-    cus_address: str
-    cus_phone: str
-    company_id: int
+    CUS_NAME: str
+    CUS_EMAIL: str
+    CUS_ADDRESS: str
+    CUS_PHONE: str
+    COMPANY_ID: int
 
 
 class Subscription(BaseModel):
-    sub_price: float
-    sub_currency: str
-    company_id: int
+    SUB_PRICE: float
+    SUB_CURRENCY: str
+    COMPANY_ID: int
 
 
 class Quote(BaseModel):
-    quote_quantity: int
-    quote_price: float
-    quote_currency: str
-    quote_active: bool = False
-    customer_id: int
-    subscription_id: int
+    QUOTE_QUANTITY: int
+    QUOTE_PRICE: float
+    QUOTE_CURRENCY: str
+    QUOTE_ACTIVE: bool = False
+    CUSTOMER_ID: int
+    SUBSCRIPTION_ID: int
 
 
 class AcceptQuote(BaseModel):
-    accept: bool = True
-    quote_id: int
+    ACCEPT: bool = True
+    QUOTE_ID: int
 
 
 class Invoice(BaseModel):
-    inv_pending: bool = True
-    quote_id: int
+    INV_PENDING: bool = True
+    QUOTE_ID: int
 
 
 class PayInvoice(BaseModel):
-    credit_card: int
-    quote_id: int
+    CREDIT_CARD: int
+    QUOTE_ID: int
 
 
 # Query
@@ -104,30 +103,6 @@ sql_create_invoice_table = ''' CREATE TABLE IF NOT EXISTS Invoice(
 # Functions
 
 
-def generate_model_to_string(model):
-    r = dict(model.__annotations__)
-    str = ""
-    for key, value in r.items():
-        str += key + ", "
-    return(str[:-2])
-
-
-def generate_model_to_list(model):
-    r = dict(model.__annotations__)
-    lst = []
-    for key, value in r.items():
-        lst.append(key)
-    return(lst)
-
-
-def generate_data_to_tuple(data):
-    dic = dict(data)
-    for key, value in dic.items():
-        # remove whitespace around the item
-        key = key.strip()
-    return(tuple([*dic.values()]))
-
-
 def calc_vat(price):
     vat = price / 100 * 21
     newPrice = price + vat
@@ -137,15 +112,11 @@ def calc_vat(price):
 def calc_conversion(price, currency):
     if (currency == "EUR"):
         return(price)
-    # check if conversion is up to date, if not update it
-    r = update_convert_table()
-    print(r)
-    # get daily conversion
-    conversionRates = read_from_table("conversion", "conversion_rates", False)
-    # convert to dict
-    conversionRates = json.loads(conversionRates[0])
-    # convert to EUR
-    finalResult = 1 / conversionRates[currency] * price
+    response = requests.get(
+        "https://v6.exchangerate-api.com/v6/e1ab50496b040f58ab530bc6/latest/EUR")
+    currentCurrencies = response.json()
+    conversionRate = currentCurrencies["conversion_rates"][currency]
+    finalResult = 1 / conversionRate * price
     return(finalResult)
 
 
@@ -171,7 +142,6 @@ def check_credit_card(cardNumbers):
                 cardNumbers[index] = num
     # sum the list + add checking digit
     finalNumber = sum(cardNumbers) + checkingDigit
-    print(finalNumber)
     if (finalNumber % 10 == 0):
         return(True)
     return (False)
@@ -183,142 +153,132 @@ def check_credit_card(cardNumbers):
 def root():
     return {"message": "It works !"}
 
+# https://fastapi.tiangolo.com/tutorial/body/
+
 
 @app.post("/create-company-account")
 def create_company_account(company: Company):
-    # create table, if already exist skip
-    if (create_table(sql_create_company_table)):
-        table = "Company"
-        # convert model to right format for sql request
-        model = generate_model_to_string(Company)
-        data = generate_data_to_tuple(company)
-        # # add data to db
-        insert_to_table(table, model, data)
-        return {"message": "Company account created"}
-    return {"result": "NOK"}
+    values_dict = dict(company)
+    conn = sqlite3.connect(databaseName)
+    cur = conn.cursor()
+    cur.execute(sql_create_company_table)
+    sql = "INSERT INTO company(CO_NAME,CO_ADDRESS,CO_VAT,CO_BANKACCOUNT) VALUES(?,?,?,?)"
+    data = [values_dict["CO_NAME"], values_dict["CO_ADDRESS"],
+            values_dict["CO_VAT"], values_dict["CO_BANKACCOUNT"]]
+    cur.execute(sql, data)
+    conn.commit()
+    conn.close()
+    return {"message": "Company account created"}
 
 
 @app.post("/create-customer-account")
 def create_customer_account(customer: Customer):
     # create table, if already exist skip
-    if (create_table(sql_create_customer_table)):
-        table = "Customer"
-        # convert model to right format for sql request
-        model_str = generate_model_to_string(Customer)
-        model_lst = generate_model_to_list(Customer)
-        data = generate_data_to_tuple(customer)
-        res = check_if_already_exist(table, model_lst, data)
-        if (res):
-            # add data to db
-            insert_to_table(table, model_str, data)
-            return {"message": "Customer account created"}
-        return {"message": "Customer already exist"}
-    return {"result": "NOK"}
+    values_dict = dict(customer)
+    conn = sqlite3.connect(databaseName)
+    cur = conn.cursor()
+    cur.execute(sql_create_customer_table)
+    sql = "INSERT INTO customer (CUS_NAME,CUS_EMAIL,CUS_ADDRESS,CUS_PHONE,COMPANY_ID) VALUES(?,?,?,?,?)"
+    data = [values_dict["CUS_NAME"], values_dict["CUS_EMAIL"],
+            values_dict["CUS_ADDRESS"], values_dict["CUS_PHONE"], values_dict["COMPANY_ID"]]
+    cur.execute(sql, data)
+    conn.commit()
+    conn.close()
+    return {"message": "Customer account created"}
 
 
 @app.post("/create-subscripton")
 def create_subscription(subscription: Subscription):
-    subscription = dict(subscription)
-    # round to 2 decimals
-    subscription["sub_price"] = round(subscription["sub_price"], 2)
-    # create table, if already exist skip
-    if (create_table(sql_create_subscription_table)):
-        table = "Subscription"
-        # convert model to right format for sql request
-        model_str = generate_model_to_string(Subscription)
-        model_lst = generate_model_to_list(Subscription)
-        data = generate_data_to_tuple(subscription)
-        res = check_if_already_exist(table, model_lst, data)
-        if (res):
-            # add data to db
-            insert_to_table(table, model_str, data)
-            return {"message": "Subscripytion created"}
-        return {"message": "Subscripytion already exist"}
-    return {"result": "NOK"}
+    values_dict = dict(subscription)
+    conn = sqlite3.connect(databaseName)
+    cur = conn.cursor()
+    cur.execute(sql_create_subscription_table)
+    sql = "INSERT INTO subscription (SUB_PRICE,SUB_CURRENCY,COMPANY_ID) VALUES(?,?,?)"
+    data = [values_dict["SUB_PRICE"], values_dict["SUB_CURRENCY"],
+            values_dict["COMPANY_ID"]]
+    cur.execute(sql, data)
+    conn.commit()
+    conn.close()
+    return {"message": "Subscription created"}
 
 
 @app.post("/create-quote")
 def create_quote(quote: Quote):
-    quote = dict(quote)
-    # round to 2 decimals
-    quote["quote_price"] = round(quote["quote_price"], 2)
-    # create table, if already exist skip
-    if (create_table(sql_create_quote_table)):
-        table = "Quote"
-        model_str = generate_model_to_string(Quote)
-        model_lst = generate_model_to_list(Quote)
-        data = generate_data_to_tuple(quote)
-        res = check_if_already_exist(table, model_lst, data)
-        if (res):
-            # add data to db
-            quote_id = insert_to_table(table, model_str, data)
-            # add quote id
-            quote["quote_id"] = quote_id
-        # convert price in euro
-        quote["quote_price_eur"] = calc_conversion(
-            quote["quote_price"], quote["quote_currency"])
-        # add vat to price
-        quote["quote_price_vat_incl"] = calc_vat(quote["quote_price_eur"])
-        # round to 2 decimals
-        quote["quote_price_vat_incl"] = round(quote["quote_price_vat_incl"], 2)
-        quote["quote_price_eur"] = round(quote["quote_price_eur"], 2)
-        # convert to json string
-        jsonStr = json.dumps(quote)
-        return {jsonStr}
-    return {"result": "NOK"}
+    values_dict = dict(quote)
+    conn = sqlite3.connect(databaseName)
+    cur = conn.cursor()
+    cur.execute(sql_create_quote_table)
+    sql = "INSERT INTO quote (QUOTE_QUANTITY,QUOTE_PRICE,QUOTE_CURRENCY,QUOTE_ACTIVE,CUSTOMER_ID,SUBSCRIPTION_ID) VALUES(?,?,?,?,?,?)"
+    data = [values_dict["QUOTE_QUANTITY"], values_dict["QUOTE_PRICE"], values_dict["QUOTE_CURRENCY"],
+            values_dict["QUOTE_ACTIVE"], values_dict["CUSTOMER_ID"], values_dict["SUBSCRIPTION_ID"]]
+    cur.execute(sql, data)
+    conn.commit()
+    conn.close()
+    quote_id = cur.lastrowid
+    values_dict["QUOTE_ID"] = quote_id
+    values_dict["QUOTE_PRICE_EUR"] = calc_conversion(
+        values_dict["QUOTE_PRICE"], values_dict["QUOTE_CURRENCY"])
+    values_dict["QUOTE_PRICE_VAT_INCL"] = calc_vat(
+        values_dict["QUOTE_PRICE_EUR"])
+
+    conn.close()
+    ##jsonStr = json.dumps(quote)
+    return (values_dict)
 
 
 @app.post("/accept-quote")
 def accept_quote(acceptQuote: AcceptQuote):
-    acceptQuote = dict(acceptQuote)
-    if (acceptQuote["accept"] == True):
-        updated = update_table("Quote", " SET quote_active = TRUE", " WHERE id = ?",
-                               list(str(acceptQuote["quote_id"])))
+    values_dict = dict(acceptQuote)
+    if (values_dict["ACCEPT"] == True):
+        conn = sqlite3.connect(databaseName)
+        cur = conn.cursor()
+        cur.execute("UPDATE Quote SET quote_active = ? WHERE id = ?",
+                    [values_dict["ACCEPT"], values_dict["QUOTE_ID"]])
+        conn.commit()
         # create invoice
-        if (updated):
-            create_table(sql_create_invoice_table)
-            model_str = generate_model_to_string(Invoice)
-            model_lst = generate_model_to_list(Invoice)
-            data = (True, acceptQuote["quote_id"])
-            res = check_if_already_exist("Invoice", model_lst, data)
-            if (res):
-                insert_to_table("Invoice", model_str, data)
-            return {"message": "Payment " + str(acceptQuote["quote_id"]) + " has been updated to : " + str(acceptQuote["accept"])}
-        return {"message": "Quote id : " + str(acceptQuote["quote_id"]) + " doesn't exist"}
+        cur.execute(sql_create_invoice_table)
+        sql = "INSERT INTO Invoice (INV_PENDING,QUOTE_ID) VALUES(?,?)"
+        data = [True, values_dict["QUOTE_ID"]]
+        cur.execute(sql, data)
+        conn.commit()
+        conn.close()
+        return {"message": "Payment " + str(values_dict["QUOTE_ID"]) + " has been updated to : True"}
     else:
-        return{"message": "Quote not accepted"}
-
-    return {"result": "NOK"}
+        return {"result": "NOK"}
 
 
 @app.get("/check-payment")
 def check_payment(quote_id: int):
-    result = read_from_table(
-        "Invoice", "*", "WHERE quote_id = " + str(quote_id))
-    if (len(result) > 1):
-        result = list(result)
-        if (result[1] == 1):
-            result[1] = True
-        else:
-            result[1] = False
-        return {"id": result[0], "inv_pending": result[1], "quote_id": result[2]}
-    return {"message": "No invoice found with the quote id : " + str(quote_id)}
+    values_dict = dict({"QUOTE_ID": quote_id})
+    conn = sqlite3.connect(databaseName)
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM Invoice WHERE QUOTE_ID = ?",
+                [values_dict["QUOTE_ID"]])
+    result = cur.fetchall()
+    conn.close()
+    if (len(result) == 1):
+        result_dict = list(result[0])
+        if (result_dict[1] == 1):
+            return {"message": "payment is pending"}
+        elif (result_dict[1] == 0):
+            return {"message": "payment is payed"}
+    else:
+        return {"message": "No invoice found with the quote id : " + str(values_dict["QUOTE_ID"])}
 
 
 @app.post("/pay-invoice")
 def pay_invoice(payInvoice: PayInvoice):
-    payInvoice = dict(payInvoice)
+    values_dict = dict(payInvoice)
     # check credit card
-    if (check_credit_card(payInvoice["credit_card"])):
-        # check if quote id exist
-        result = read_from_table(
-            "Invoice", "*", "WHERE quote_id = " + str(payInvoice["quote_id"]))
-        if (len(result) > 1):
-            update_table("Invoice", " SET inv_pending = FALSE",
-                         " WHERE quote_id = ?", list(str(payInvoice["quote_id"])))
-            return{"message": "Payment accepted"}
-        return {"message": "Payment refused invoice doesn't exist."}
-    return {"message": "Payment refused wrong credit card : " + str(payInvoice["credit_card"])}
+    if (check_credit_card(values_dict["CREDIT_CARD"]) == True):
+        conn = sqlite3.connect(databaseName)
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE Invoice SET INV_PENDING = FALSE WHERE id = ?", [values_dict["QUOTE_ID"]])
+        conn.close()
+        return{"message": "Payment accepted"}
+    else:
+        return {"message": "Payment refused wrong credit card : " + str(payInvoice["credit_card"])}
 
 
 if __name__ == '__main__':
